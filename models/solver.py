@@ -2000,3 +2000,153 @@ class Solver:
             k += 1
         top_k = sorted(contribs, reverse=True)[:k]
         return sum(top_k)
+
+
+   def improved_time_aware_score(self, instance_file):
+        with open(instance_file, 'r') as f:
+            _, L, D = map(int, f.readline().split())
+            scores = list(map(int, f.readline().split()))
+            libraries = []
+
+            for _ in range(L):
+                n_books, signup, throughput = map(int, f.readline().split())
+                ids = list(map(int, f.readline().split()))
+                days_left = D - signup
+                cap = max(0, days_left * throughput)
+
+                # Slight shuffle to break ties differently each run
+                random.shuffle(ids)
+
+                top_books = sorted(ids, key=lambda i: scores[i], reverse=True)[:cap]
+                total_score = sum(scores[i] for i in top_books)
+                delay_penalty = 1 + (signup / D)  # Longer signups = lower priority
+
+                libraries.append({
+                    "signup": signup,
+                    "throughput": throughput,
+                    "cap": cap,
+                    "books": ids,
+                    "score": total_score / delay_penalty
+                })
+
+            # Sort libraries by adjusted score
+            libraries.sort(key=lambda x: x["score"], reverse=True)
+
+            used_books = set()
+            total_score = 0
+
+            for lib in libraries:
+                selected = []
+                for book in lib["books"]:
+                    if book not in used_books:
+                        selected.append(book)
+                        used_books.add(book)
+                    if len(selected) >= lib["cap"]:
+                        break
+                total_score += sum(scores[i] for i in selected)
+
+            return total_score
+
+    def improved_greedy_upper_bound(self, instance_file):
+        with open(instance_file, 'r') as f:
+            B, L, D = map(int, f.readline().split())
+            scores = list(map(int, f.readline().split()))
+            libraries = []
+
+            for _ in range(L):
+                n_books, signup, throughput = map(int, f.readline().split())
+                ids = list(map(int, f.readline().split()))
+                libraries.append({
+                    'signup': signup,
+                    'throughput': throughput,
+                    'book_ids': ids
+                })
+
+        used_books = set()
+        lib_stats = []
+
+        for lib in libraries:
+            signup = lib['signup']
+            throughput = lib['throughput']
+            days = max(0, D - signup)
+            cap = int(days * throughput * 0.985)  
+            available_books = [i for i in lib['book_ids'] if i not in used_books]
+            best_books = sorted(available_books, key=lambda x: scores[x], reverse=True)[:cap]
+            score_sum = sum(scores[i] for i in best_books)
+
+            lib_stats.append({
+                'signup': signup,
+                'throughput': throughput,
+                'score_sum': score_sum,
+                'value': score_sum / ((signup + 1) ** 1.04),
+                'best_books': best_books,
+            })
+
+        lib_stats.sort(key=lambda x: x['value'], reverse=True)
+
+        total_time = 0
+        total_score = 0
+
+        for lib in lib_stats:
+            if total_time + lib['signup'] >= D:
+                continue
+            total_time += lib['signup']
+            days_left = D - total_time
+            max_books = int(days_left * lib['throughput'] * 0.985)  # ✅ same factor
+            count = 0
+
+            for book in lib['best_books']:
+                if book not in used_books:
+                    used_books.add(book)
+                    total_score += scores[book]
+                    count += 1
+                    if count >= max_books:
+                        break
+
+        return total_score
+
+    def improved_library_only_score_v2(self, instance_file):
+        with open(instance_file, 'r') as f:
+            _, L, D = map(int, f.readline().split())
+            scores = list(map(int, f.readline().split()))
+            libraries = []
+
+            for _ in range(L):
+                n_books, signup, throughput = map(int, f.readline().split())
+                ids = list(map(int, f.readline().split()))
+                days_left = max(0, D - signup)
+                cap = int(days_left * throughput * 0.94)  # 6% underfill
+                top_books = sorted(ids, key=lambda i: scores[i], reverse=True)[:cap]
+                score_sum = sum(scores[i] for i in top_books)
+
+                libraries.append({
+                    'signup': signup,
+                    'throughput': throughput,
+                    'score_sum': score_sum,
+                    'top_books': top_books,
+                    'value': score_sum / ((signup + 0.5) ** 1.15)
+                })
+
+        libraries.sort(key=lambda lib: lib['value'], reverse=True)
+
+        total_time = 0
+        used_books = set()
+        total_score = 0
+
+        for lib in libraries:
+            if total_time + lib['signup'] >= D:
+                continue
+            total_time += lib['signup']
+            days_left = D - total_time
+            max_books = int(days_left * lib['throughput'] * 0.94)
+            count = 0
+
+            for book in lib['top_books']:
+                if book not in used_books:
+                    used_books.add(book)
+                    total_score += scores[book]
+                    count += 1
+                    if count >= max_books:
+                        break
+
+        return total_score
